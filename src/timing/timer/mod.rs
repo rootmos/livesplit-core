@@ -641,6 +641,10 @@ impl Timer {
         self.active_attempt.as_ref()?.get_pause_time()
     }
 
+    pub fn get_start_time(&self) -> Option<AtomicDateTime> {
+        self.active_attempt.as_ref().map(|a| a.attempt_started)
+    }
+
     /// Returns whether Game Time is currently initialized. Game Time
     /// automatically gets uninitialized for each new attempt.
     #[inline]

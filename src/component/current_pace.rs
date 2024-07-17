@@ -8,16 +8,22 @@ use crate::{
     analysis::current_pace,
     comparison,
     platform::prelude::*,
+    platform::to_local,
     settings::{Color, Field, Gradient, SettingsDescription, Value},
     timing::{
-        formatter::{Accuracy, Regular, TimeFormatter},
-        Snapshot,
+        formatter::{Accuracy, Regular, TimeFormatter, DASH},
+        AtomicDateTime, Snapshot,
     },
     TimerPhase,
 };
 use alloc::borrow::Cow;
 use core::fmt::Write;
 use serde_derive::{Deserialize, Serialize};
+
+use time::{
+    macros::format_description,
+    format_description::BorrowedFormatItem,
+};
 
 /// The Current Pace Component is a component that shows a prediction of the
 /// current attempt's final time, if the current attempt's pace matches the
@@ -47,6 +53,8 @@ pub struct Settings {
     pub value_color: Option<Color>,
     /// The accuracy of the time shown.
     pub accuracy: Accuracy,
+
+    pub wall_clock: bool,
 }
 
 impl Default for Settings {
@@ -58,9 +66,12 @@ impl Default for Settings {
             label_color: None,
             value_color: None,
             accuracy: Accuracy::Seconds,
+            wall_clock: false,
         }
     }
 }
+
+const DEFAULT_WALL_CLOCK_FORMAT: &[BorrowedFormatItem<'_>] = format_description!("[hour]:[minute]:[second]");
 
 impl Component {
     /// Creates a new Current Pace Component.
@@ -124,11 +135,22 @@ impl Component {
         state.key.push_str(&key); // FIXME: Uncow this
 
         state.value.clear();
-        let _ = write!(
-            state.value,
-            "{}",
-            Regular::with_accuracy(self.settings.accuracy).format(current_pace)
-        );
+        if self.settings.wall_clock {
+            if let Some(cp) = current_pace {
+                let start = timer.get_start_time().unwrap_or_else(|| AtomicDateTime::now());
+                let time = to_local(start.time + cp.to_duration());
+                let value = time.format(DEFAULT_WALL_CLOCK_FORMAT).unwrap();
+                let _ = write!(state.value, "{}", value);
+            } else {
+                let _ = write!(state.value, "{}", DASH);
+            }
+        } else {
+            let _ = write!(
+                state.value,
+                "{}",
+                Regular::with_accuracy(self.settings.accuracy).format(current_pace)
+            );
+        }
 
         state.key_abbreviations.clear();
         // FIXME: This &* probably is different when key is uncowed
@@ -201,6 +223,11 @@ impl Component {
                 "The accuracy of the predicted time shown.".into(),
                 self.settings.accuracy.into(),
             ),
+            Field::new(
+                "Display relative wall clock".into(),
+                "Display the predicted wall clock time".into(),
+                self.settings.wall_clock.into(),
+            ),
         ])
     }
 
@@ -219,6 +246,7 @@ impl Component {
             3 => self.settings.label_color = value.into(),
             4 => self.settings.value_color = value.into(),
             5 => self.settings.accuracy = value.into(),
+            6 => self.settings.wall_clock = value.into(),
             _ => panic!("Unsupported Setting Index"),
         }
     }
