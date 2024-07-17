@@ -8,9 +8,10 @@ use crate::{
     analysis::current_pace,
     comparison,
     platform::prelude::*,
+    platform::to_local,
     settings::{Color, Field, Gradient, SettingsDescription, Value},
     timing::{
-        formatter::{Accuracy, Regular, TimeFormatter},
+        formatter::{Accuracy, Regular, TimeFormatter, DASH},
         Snapshot,
     },
     TimerPhase,
@@ -18,6 +19,11 @@ use crate::{
 use alloc::borrow::Cow;
 use core::fmt::Write;
 use serde_derive::{Deserialize, Serialize};
+
+use time::{
+    macros::format_description,
+    format_description::BorrowedFormatItem,
+};
 
 /// The Current Pace Component is a component that shows a prediction of the
 /// current attempt's final time, if the current attempt's pace matches the
@@ -47,6 +53,8 @@ pub struct Settings {
     pub value_color: Option<Color>,
     /// The accuracy of the time shown.
     pub accuracy: Accuracy,
+    /// Display predicted time relative wall clock
+    pub wall_clock: bool,
 }
 
 impl Default for Settings {
@@ -58,9 +66,12 @@ impl Default for Settings {
             label_color: None,
             value_color: None,
             accuracy: Accuracy::Seconds,
+            wall_clock: false,
         }
     }
 }
+
+const DEFAULT_WALL_CLOCK_FORMAT: &[BorrowedFormatItem<'_>] = format_description!("[hour]:[minute]:[second]");
 
 impl Component {
     /// Creates a new Current Pace Component.
@@ -108,13 +119,6 @@ impl Component {
         let comparison = comparison::or_current(comparison, timer);
         let key = self.text(Some(comparison));
 
-        let (current_pace, updates_frequently) =
-            if timer.current_phase() == TimerPhase::NotRunning && key.starts_with("Current Pace") {
-                (None, false)
-            } else {
-                current_pace::calculate(timer, comparison)
-            };
-
         state.background = self.settings.background;
         state.key_color = self.settings.label_color;
         state.value_color = self.settings.value_color;
@@ -124,11 +128,34 @@ impl Component {
         state.key.push_str(&key); // FIXME: Uncow this
 
         state.value.clear();
-        let _ = write!(
-            state.value,
-            "{}",
-            Regular::with_accuracy(self.settings.accuracy).format(current_pace)
-        );
+
+        if !self.settings.wall_clock {
+            let (current_pace, uf) =
+                if timer.current_phase() == TimerPhase::NotRunning && key.starts_with("Current Pace") {
+                    (None, false)
+                } else {
+                    current_pace::calculate(timer, comparison)
+                };
+
+            state.updates_frequently = uf;
+
+            let _ = write!(
+                state.value,
+                "{}",
+                Regular::with_accuracy(self.settings.accuracy).format(current_pace)
+            );
+        } else {
+            let (predicted_time, uf) = current_pace::predict_wall_clock_time(timer, comparison);
+
+            state.updates_frequently = uf;
+
+            if let Some(pt) = predicted_time {
+                let value = to_local(pt.time).format(DEFAULT_WALL_CLOCK_FORMAT).unwrap();
+                let _ = write!(state.value, "{}", value);
+            } else {
+                let _ = write!(state.value, "{}", DASH);
+            }
+        }
 
         state.key_abbreviations.clear();
         // FIXME: This &* probably is different when key is uncowed
@@ -157,7 +184,6 @@ impl Component {
         }
 
         state.display_two_rows = self.settings.display_two_rows;
-        state.updates_frequently = updates_frequently;
     }
 
     /// Calculates the component's state based on the timer provided.
@@ -201,6 +227,11 @@ impl Component {
                 "The accuracy of the predicted time shown.".into(),
                 self.settings.accuracy.into(),
             ),
+            Field::new(
+                "Display relative wall clock".into(),
+                "Display the predicted wall clock time".into(),
+                self.settings.wall_clock.into(),
+            ),
         ])
     }
 
@@ -219,6 +250,7 @@ impl Component {
             3 => self.settings.label_color = value.into(),
             4 => self.settings.value_color = value.into(),
             5 => self.settings.accuracy = value.into(),
+            6 => self.settings.wall_clock = value.into(),
             _ => panic!("Unsupported Setting Index"),
         }
     }
