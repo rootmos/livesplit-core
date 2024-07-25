@@ -2,7 +2,7 @@
 //! provided. If there's no active attempt, the final time of the comparison is
 //! returned instead.
 
-use crate::{analysis, timing::Snapshot, TimeSpan, TimerPhase};
+use crate::{analysis, timing::Snapshot, TimeSpan, TimerPhase, AtomicDateTime};
 
 /// Calculates the current pace of the active attempt based on the comparison
 /// provided. If there's no active attempt, the final time of the comparison is
@@ -45,5 +45,18 @@ pub fn calculate(timer: &Snapshot<'_>, comparison: &str) -> (Option<TimeSpan>, b
         }
         TimerPhase::Ended => (last_segment.split_time()[timing_method], false),
         TimerPhase::NotRunning => (last_segment.comparison(comparison)[timing_method], false),
+    }
+}
+
+pub fn predict_wall_clock_time(timer: &Snapshot<'_>, comparison: &str) -> (Option<AtomicDateTime>, bool) {
+    if let (Some(cp), _) = calculate(timer, comparison) {
+        let start = timer.get_start_time().unwrap_or_else(|| AtomicDateTime::now());
+        let finish = AtomicDateTime {
+            time: start.time + cp.to_duration(),
+            synced_with_atomic_clock: start.synced_with_atomic_clock,
+        };
+        return (Some(finish), true); // TODO: is it correct to claim that it updates frequently?
+    } else {
+        return (None, false);
     }
 }
