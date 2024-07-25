@@ -1,3 +1,3 @@
 go() {
-    cult test --lib -- "analysis::tests::current_pace"
+    cult test --lib -- --show-output "analysis::tests::current_pace"
 }
