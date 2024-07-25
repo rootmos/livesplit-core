@@ -64,7 +64,6 @@ fn predicted_time_change_while_paused() {
     run_with_splits(&mut timer, &[60.0]);
 
     timer.start().unwrap();
-    let start = timer.get_start_time().unwrap().time;
 
     let snap0 = timer.snapshot();
     let (predicted_time0, _) = analysis::current_pace::predict_wall_clock_time(&snap0, COMPARISON);
@@ -72,6 +71,27 @@ fn predicted_time_change_while_paused() {
     timer.pause().unwrap();
 
     thread::sleep(Duration::from_secs(1));
+
+    let snap1 = timer.snapshot();
+    let (predicted_time1, _) = analysis::current_pace::predict_wall_clock_time(&snap1, COMPARISON);
+
+    let d = predicted_time1.unwrap().time - predicted_time0.unwrap().time;
+    assert!(d >= Duration::from_secs(1));
+}
+
+#[test]
+fn predicted_time_has_changed_after_resume() {
+    let mut timer = create_timer(&["A"]);
+    run_with_splits(&mut timer, &[60.0]);
+
+    timer.start().unwrap();
+
+    let snap0 = timer.snapshot();
+    let (predicted_time0, _) = analysis::current_pace::predict_wall_clock_time(&snap0, COMPARISON);
+
+    timer.pause().unwrap();
+    thread::sleep(Duration::from_secs(1));
+    timer.resume().unwrap();
 
     let snap1 = timer.snapshot();
     let (predicted_time1, _) = analysis::current_pace::predict_wall_clock_time(&snap1, COMPARISON);
