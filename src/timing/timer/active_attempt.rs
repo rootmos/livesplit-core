@@ -70,19 +70,15 @@ impl ActiveAttempt {
     }
 
     pub fn get_pause_time(&self) -> Option<TimeSpan> {
-        if let State::NotEnded {
-            time_paused_at: Some(pause_time),
-            ..
-        } = self.state
-        {
-            return Some(TimeStamp::now() - self.start_time_with_offset - pause_time);
-        }
+        let accumulated = self.adjusted_start_time - self.start_time_with_offset;
 
-        if self.start_time_with_offset != self.adjusted_start_time {
-            Some(self.start_time_with_offset - self.adjusted_start_time)
+        let current = if let State::NotEnded { time_paused_at: Some(pause_time), .. } = self.state {
+            TimeStamp::now() - self.start_time_with_offset - pause_time
         } else {
-            None
-        }
+            TimeSpan::zero()
+        };
+
+        return Some(accumulated + current);
     }
 
     pub fn set_loading_times(&mut self, time: TimeSpan, run: &Run) {
