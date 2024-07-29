@@ -12,7 +12,7 @@ use crate::{
     settings::{Color, Field, Gradient, SettingsDescription, Value},
     timing::{
         formatter::{Accuracy, Regular, TimeFormatter, DASH},
-        AtomicDateTime, Snapshot,
+        Snapshot,
     },
     TimerPhase,
 };
@@ -119,13 +119,6 @@ impl Component {
         let comparison = comparison::or_current(comparison, timer);
         let key = self.text(Some(comparison));
 
-        let (current_pace, updates_frequently) =
-            if timer.current_phase() == TimerPhase::NotRunning && key.starts_with("Current Pace") {
-                (None, false)
-            } else {
-                current_pace::calculate(timer, comparison)
-            };
-
         state.background = self.settings.background;
         state.key_color = self.settings.label_color;
         state.value_color = self.settings.value_color;
@@ -135,21 +128,33 @@ impl Component {
         state.key.push_str(&key); // FIXME: Uncow this
 
         state.value.clear();
-        if self.settings.wall_clock {
-            if let Some(cp) = current_pace {
-                let start = timer.get_start_time().unwrap_or_else(|| AtomicDateTime::now());
-                let time = to_local(start.time + cp.to_duration());
-                let value = time.format(DEFAULT_WALL_CLOCK_FORMAT).unwrap();
-                let _ = write!(state.value, "{}", value);
-            } else {
-                let _ = write!(state.value, "{}", DASH);
-            }
-        } else {
+
+        if !self.settings.wall_clock {
+            let (current_pace, uf) = 
+                if timer.current_phase() == TimerPhase::NotRunning && key.starts_with("Current Pace") {
+                    (None, false)
+                } else {
+                    current_pace::calculate(timer, comparison)
+                };
+
+            state.updates_frequently = uf;
+
             let _ = write!(
                 state.value,
                 "{}",
                 Regular::with_accuracy(self.settings.accuracy).format(current_pace)
             );
+        } else {
+            let (predicted_time, uf) = current_pace::predict_wall_clock_time(timer, comparison);
+
+            state.updates_frequently = uf;
+
+            if let Some(pt) = predicted_time {
+                let value = to_local(pt.time).format(DEFAULT_WALL_CLOCK_FORMAT).unwrap();
+                let _ = write!(state.value, "{}", value);
+            } else {
+                let _ = write!(state.value, "{}", DASH);
+            }
         }
 
         state.key_abbreviations.clear();
@@ -179,7 +184,6 @@ impl Component {
         }
 
         state.display_two_rows = self.settings.display_two_rows;
-        state.updates_frequently = updates_frequently;
     }
 
     /// Calculates the component's state based on the timer provided.

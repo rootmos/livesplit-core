@@ -70,18 +70,10 @@ impl ActiveAttempt {
     }
 
     pub fn get_pause_time(&self) -> Option<TimeSpan> {
-        if let State::NotEnded {
-            time_paused_at: Some(pause_time),
-            ..
-        } = self.state
-        {
-            return Some(TimeStamp::now() - self.start_time_with_offset - pause_time);
-        }
-
-        if self.start_time_with_offset != self.adjusted_start_time {
-            Some(self.start_time_with_offset - self.adjusted_start_time)
+        if let State::NotEnded { time_paused_at: Some(pause_time), .. } = self.state {
+            Some(TimeStamp::now() - self.start_time_with_offset - pause_time)
         } else {
-            None
+            Some(self.adjusted_start_time - self.start_time_with_offset)
         }
     }
 
