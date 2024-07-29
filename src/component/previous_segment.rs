@@ -55,6 +55,8 @@ pub struct Settings {
     /// Determines if the time save that could've been saved is shown in
     /// addition to the previous segment.
     pub show_possible_time_save: bool,
+    /// Always show live segment
+    pub always_show_live_segment: bool,
 }
 
 impl Default for Settings {
@@ -67,6 +69,7 @@ impl Default for Settings {
             drop_decimals: true,
             accuracy: Accuracy::Tenths,
             show_possible_time_save: false,
+            always_show_live_segment: false,
         }
     }
 }
@@ -128,14 +131,18 @@ impl Component {
         let mut previous_possible = None;
         let resolved_comparison = comparison::resolve(&self.settings.comparison_override, timer);
         let comparison = comparison::or_current(resolved_comparison, timer);
-        let live_segment =
-            analysis::check_live_delta(timer, false, comparison, timer.current_timing_method());
+
+        let live_segment = if self.settings.always_show_live_segment {
+            true
+        } else {
+            analysis::check_live_delta(timer, false, comparison, timer.current_timing_method()).is_some()
+        };
 
         let phase = timer.current_phase();
         let method = timer.current_timing_method();
         let semantic_color = if phase != TimerPhase::NotRunning {
             let split_index = timer.current_split_index().unwrap();
-            if live_segment.is_some() {
+            if live_segment {
                 time_change = analysis::live_segment_delta(timer, split_index, comparison, method);
                 if self.settings.show_possible_time_save {
                     previous_possible = analysis::possible_time_save::calculate(
@@ -161,7 +168,7 @@ impl Component {
             };
 
             if let Some(time_change) = time_change {
-                if live_segment.is_some() {
+                if live_segment {
                     analysis::split_color(
                         timer,
                         time_change.into(),
@@ -203,7 +210,7 @@ impl Component {
 
         let value_color = Some(semantic_color.visualize(layout_settings));
 
-        let text = self.text(live_segment.is_some(), resolved_comparison);
+        let text = self.text(live_segment, resolved_comparison);
 
         state.background = self.settings.background;
         state.key_color = self.settings.label_color;
@@ -229,7 +236,7 @@ impl Component {
         }
 
         state.key_abbreviations.clear();
-        if live_segment.is_some() {
+        if live_segment {
             state.key_abbreviations.push("Live Segment".into());
             state.key_abbreviations.push("Live Seg.".into());
         } else {
@@ -239,7 +246,7 @@ impl Component {
         }
 
         state.display_two_rows = self.settings.display_two_rows;
-        state.updates_frequently = live_segment.is_some() && phase.updates_frequently(method);
+        state.updates_frequently = live_segment && phase.updates_frequently(method);
     }
 
     /// Calculates the component's state based on the timer and the layout
@@ -293,6 +300,11 @@ impl Component {
                 "Specifies whether to show how much time could've been saved for the previous segment in addition to the time saved or lost.".into(),
                 self.settings.show_possible_time_save.into(),
             ),
+            Field::new(
+                "Always Show Live Segment".into(),
+                "Always show the live segment time.".into(),
+                self.settings.always_show_live_segment.into(),
+            ),
         ])
     }
 
@@ -312,6 +324,7 @@ impl Component {
             4 => self.settings.drop_decimals = value.into(),
             5 => self.settings.accuracy = value.into(),
             6 => self.settings.show_possible_time_save = value.into(),
+            7 => self.settings.always_show_live_segment = value.into(),
             _ => panic!("Unsupported Setting Index"),
         }
     }
